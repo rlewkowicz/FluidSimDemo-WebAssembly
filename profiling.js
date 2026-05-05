@@ -94,6 +94,13 @@ export async function loadModel(releasePath) {
     } catch (_) { /* regions metadata is optional */ }
 
     const response = await fetch(profilePath);
+    if (!response.ok) {
+        throw new Error(
+            `loadModel: ?profile=1 set but ${profilePath} responded ${response.status}. ` +
+            `Run \`FLUIDSIM_PROFILE=1 julia --project=.. compile.jl\` in the simulation directory ` +
+            `to produce the profile binary, or drop ?profile=1 to load the release model.`
+        );
+    }
     const bytes = await response.arrayBuffer();
     const imports = {
         env: {
