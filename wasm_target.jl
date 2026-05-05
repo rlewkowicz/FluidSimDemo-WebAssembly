@@ -57,8 +57,7 @@ end
 
 struct WASMTarget <: GPUCompiler.AbstractCompilerTarget end
 
-GPUCompiler.llvm_triple(::WASMTarget) = "wasm32-unknown-wasi"
-#GPUCompiler.llvm_triple(::WASMTarget) = "wasm64-unknown-wasi"
+GPUCompiler.llvm_triple(::WASMTarget) = "wasm64-unknown-wasi"
 GPUCompiler.runtime_slug(::GPUCompiler.CompilerJob{WASMTarget}) = "wasm-test"
 
 struct WASMTargetParams <: GPUCompiler.AbstractCompilerParams end
@@ -125,9 +124,9 @@ end
 
 
 stack_pointer() =
-    Ptr{Nothing}(ccall("extern get_stack_pointer", llvmcall, Cint, ()))
+    Ptr{Nothing}(ccall("extern get_stack_pointer", llvmcall, Int64, ()))
 stack_pointer(p) =
-    ccall("extern set_stack_pointer", llvmcall, Cvoid, (Cint,),Cint(p))
+    ccall("extern set_stack_pointer", llvmcall, Cvoid, (Int64,), Int64(p))
 
 function push_stack(value::T) where T
     stackptr = stack_pointer()

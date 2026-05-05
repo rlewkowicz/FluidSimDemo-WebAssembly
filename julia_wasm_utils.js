@@ -1,18 +1,21 @@
+// wasm64 layout: pointer (i64), length (i64), size1 (i64), size2, ...
+// base[0] is a BigInt byte-offset into memory.buffer.
 export function MallocArray_elsize(typearray,memory,base,size,elsize4) {
     // number of elements in array
     let len = size.reduce((a, b)=> a*b, 1);
 
-    // pointer (Int32), length (Int32), size1 (Int32), size2, ...
-    // where
-    // length = size1*size2*...
-    let metadata = new Int32Array(memory.buffer, base[0], 2 + size.length);
-    base[0] += metadata.byteLength;
-    metadata.set([base[0], len].concat(size));
+    // 8-byte alignment required for BigInt64Array
+    if (base[0] & 7n) base[0] = (base[0] | 7n) + 1n;
 
-    const data = new typearray(memory.buffer, base[0], len*elsize4);
-    base[0] += data.byteLength;
+    let metaOffset = base[0];
+    let metadata = new BigInt64Array(memory.buffer, Number(metaOffset), 2 + size.length);
+    base[0] += BigInt(metadata.byteLength);
+    metadata.set([base[0], BigInt(len)].concat(size.map(BigInt)));
 
-    return [metadata.byteOffset, data];
+    const data = new typearray(memory.buffer, Number(base[0]), len*elsize4);
+    base[0] += BigInt(data.byteLength);
+
+    return [metaOffset, data];
 }
 
 export function MallocArray(typearray,memory,base,size) {

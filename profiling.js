@@ -63,11 +63,22 @@ function jsRecord(id, ms) {
     record(s, ms);
 }
 
+// GPUCompiler emits dead-code references to a few Julia runtime symbols
+// (e.g. SpatialHashing.jl). They are never called at runtime; supply no-op
+// stubs so WebAssembly.instantiate succeeds.
+const RUNTIME_STUBS = {
+    ijl_box_int64: () => 0n,
+    ijl_invoke: () => 0n,
+    jl_small_typeof: 0n,
+};
+
 export async function loadModel(releasePath) {
+    const stubsEnv = { ...RUNTIME_STUBS };
+
     if (!PROFILE) {
         const response = await fetch(releasePath);
         const bytes = await response.arrayBuffer();
-        const { instance } = await WebAssembly.instantiate(bytes);
+        const { instance } = await WebAssembly.instantiate(bytes, { env: stubsEnv });
         return { instance };
     }
 
@@ -86,6 +97,7 @@ export async function loadModel(releasePath) {
     const bytes = await response.arrayBuffer();
     const imports = {
         env: {
+            ...stubsEnv,
             js_perf_now: () => performance.now(),
             js_profile_record: (id, ms) => jsRecord(id, ms),
         }

@@ -20,7 +20,7 @@ export async function run(document) {
     const initFn = wrapStep(julia_nlayer_init, "init");
 
     // base[0] offset of memory, increased by MallocArray
-    let base = [__heap_base];
+    let base = [__heap_base.value];
 
     let params = new URLSearchParams(document.location.search);
     const imax = parseInt(params.get("imax") || 101);

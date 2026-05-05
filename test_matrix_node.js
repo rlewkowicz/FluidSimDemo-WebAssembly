@@ -6,19 +6,19 @@ WebAssembly.instantiate(wasmBuffer).then(wasmModule => {
   // Exported function live under instance.exports
   const { julia_sum_matrix, memory } = wasmModule.instance.exports;
 
-    // Create an array that can be passed to the WebAssembly instance.
-    const array = new Int32Array(memory.buffer, 0, 4)
+    // wasm64: 4 BigInt64 metadata fields (pointer, length, sz1, sz2)
+    const array = new BigInt64Array(memory.buffer, 0, 4)
 
-    // data starts after 4 Int32
-    offset = 4*4
-    array.set([offset, 6, 2, 3])
+    // data starts after 4 i64
+    const offset = 4n*8n
+    array.set([offset, 6n, 2n, 3n])
 
-    const arrayf = new Float32Array(memory.buffer, offset, 6)
+    const arrayf = new Float32Array(memory.buffer, Number(offset), 6)
     arrayf.set([2, 3, 4, 5, 6, 7.01])
-    
+
     // Call the function and display the results.
-    const result = julia_sum_matrix(array.byteOffset)
-      
+    const result = julia_sum_matrix(BigInt(array.byteOffset))
+
     console.log(result);
 
     console.log(arrayf);

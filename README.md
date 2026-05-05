@@ -22,40 +22,83 @@ This approach here uses a subset of the Julia language and the array object of S
 Luckily, the julia programming language does not get in your way to write low-level code. However it is possible to use higher-level constructs like tuples and named tuples inside the julia code but such data structures cannot be (easily) made available in JavaScript.
 
 
-## Perequisites
+## Prerequisites
 
-* Julia 32-bit from https://julialang.org/downloads/
-* The command line tools  `wasm-ld` and `wasm2wat`
-* Compiler clang
-* For testing, it is useful to use JavaScript runtime node
+* Julia 1.11.x (64-bit, x86_64) from https://julialang.org/downloads/
+* `wasm-ld` (from LLVM lld) and `wasm2wat` (from WABT)
+* `clang` to compile the small C dependencies (memset, LLVM compiler-rt builtins for SPH)
+* Node.js (≥ 22) for the test scripts and a static server
+* A browser with WebAssembly memory64 support (Chrome ≥ 133, Firefox ≥ 134, Safari ≥ 18.4)
 
-On Ubuntu 24.04, these requirements can be install by:
+On Fedora:
 
 ```bash
-sudo apt install wabt clang lld nodejs
+sudo dnf install lld wabt clang nodejs
 ```
 
-To install all julia dependencies, start the 32-bit version of julia and run:
+On Ubuntu 24.04:
 
-```julia
-using Pkg
-Pkg.activate("/path/to/this/source/code")
-Pkg.instantiate()
+```bash
+sudo apt install lld wabt clang nodejs
 ```
 
-The source code of the fluid model is in a separate repository: https://github.com/Alexander-Barth/FluidSimDemo.jl
-If you are not using the Manifest file, you can install the unregistered dependencies via:
+Install Julia and the project dependencies:
+
+```bash
+# Julia 1.11.x is the supported version
+curl -fsSL https://julialang-s3.julialang.org/bin/linux/x64/1.11/julia-1.11.7-linux-x86_64.tar.gz \
+  | tar xz -C ~/local && export PATH=~/local/julia-1.11.7/bin:$PATH
+
+cd /path/to/FluidSimDemo-WebAssembly
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+`Pkg.instantiate()` reads `Manifest-v1.11.toml` and pulls the unregistered git dependencies (`FluidSimDemo`, `SmoothedParticleHydrodynamics`, `SpatialHashing`). If you skip the manifest, install them manually:
 
 ```julia
 ]add https://github.com/Alexander-Barth/SpatialHashing.jl https://github.com/Alexander-Barth/SmoothedParticleHydrodynamics.jl  https://github.com/Alexander-Barth/FluidSimDemo.jl
 ```
 
+## Building and running the simulations
+
+Each simulation has its own `compile.jl` that emits a `model.wasm` next to its `index.html`.
+
+```bash
+# release build (one per simulation)
+( cd GrayScott                     && julia --project=.. compile.jl )
+( cd ShallowWater                  && julia --project=.. compile.jl )
+( cd NLayers                       && julia --project=.. compile.jl )
+( cd SmoothedParticleHydrodynamics && julia --project=.. compile.jl )
+```
+
+Then serve the repo root and open the simulations in a memory64-capable browser:
+
+```bash
+# any static server works; Python is the easiest if you have it
+python3 -m http.server 8000
+# or:  npx serve -p 8000
+```
+
+Open `http://localhost:8000/GrayScott/` (or `ShallowWater/`, `NLayers/`, `SmoothedParticleHydrodynamics/`).
+
+To verify a build without a browser, the test scripts in this repo round-trip a single step through Node:
+
+```bash
+julia --project=. test_add.jl              # then: node test_add_node.js
+julia --project=. test_matrix.jl           # then: node test_matrix_node.js
+```
+
+### Notes on the 64-bit ABI
+
+* GPUCompiler targets `wasm64-unknown-wasi`. Pointers (and `Int` on the host) are 64-bit, so JS sees them as `BigInt`. The `MallocArray_elsize` helper in [`julia_wasm_utils.js`](julia_wasm_utils.js) writes the array metadata (pointer, length, sizes) as four `BigInt64` slots; pointer offsets crossing the WASM boundary are passed as `BigInt`.
+* `clang` invocations for `memset.c` and the SPH compiler-rt shifts use `--target=wasm64`; the linker is invoked with `wasm-ld -mwasm64 ...`.
+* The SPH build links with `--allow-undefined` because GPUCompiler emits dead-code references to a few Julia runtime symbols (`ijl_box_int64`, `ijl_invoke`, `jl_small_typeof`). These are stubbed in [`profiling.js`](profiling.js)'s `loadModel` and never reached at runtime.
+
 ## Generating WASM binary from julia code
 
-We will use `GPUCompiler.jl` to declare a `WASMTarget` and to emit WASM code. This is the file [`wasm_target.jl`](wasm_target.jl) which we will use.
+We use `GPUCompiler.jl` to declare a `WASMTarget` and emit WASM code. The target definition lives in [`wasm_target.jl`](wasm_target.jl).
 
-Note that we use 32-bit julia (on Linux) and 32-bit WASM format.
-Using the 64-bit version (of julia or the WASM format) did not work for me.
+The triple is `wasm64-unknown-wasi` and the host Julia is 64-bit, so pointers and `Int` are 64-bit on both sides. Browsers running these binaries must support the WebAssembly memory64 proposal.
 
 One of the simplest functions would be to add two integers and return the sum. 
 
@@ -86,10 +129,10 @@ $ wasm2wat test_add.o
 
 Note that the function add has been prefixed by `julia_`.
 
-The linker step is necessary to export the `julia_add` function.
+The linker step (with `-mwasm64` because the object file targets memory64) is necessary to export the `julia_add` function.
 
 ```
-wasm-ld --no-entry --export-all -o test_add.wasm test_add.o
+wasm-ld -mwasm64 --no-entry --export-all -o test_add.wasm test_add.o
 ```
 
 To test the WASM binary, it is convenient to use `node`. The code can be executed by running:
@@ -136,7 +179,7 @@ So we have essentially:
 * the total number of elements (`length`)
 * a tuple with the size along each dimension
 
-The code [`test_matrix_node.js`](test_matrix_node.js) emulates such an array. For a matrix (2D array), there are thus four 32-bit integers: pointer, number of elements, number of lines and number of rows (where the number of elements is the product of the number of rows and lines).
+The code [`test_matrix_node.js`](test_matrix_node.js) emulates such an array. For a matrix (2D array), there are thus four 64-bit integers (under the wasm64 target): pointer, number of elements, number of lines and number of rows. JS reads them as `BigInt64Array` and passes the metadata pointer across the WASM boundary as a `BigInt`.
 
 WASM exposes a special binary data buffer `memory.buffer` to allocate such data structures. A pointer would then just be an index or rather offset relative to the start of this byte buffer. Using JavaScript’s typed arrays, a part of the buffer can be interpreted as a vector of 32-bit integer, 64-bit floating point number,...
 JavaScript typed arrays are always one-dimensional, which correspond to a flatten view of the array seen from Julia. As a consequence, for

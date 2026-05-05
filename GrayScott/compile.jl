@@ -122,7 +122,9 @@ nmax = 1000
 
 mask = ones(Int32,sz)
 n = 0
-@time model_step(Δx,Δt,Du,Dv,f,k,r,n,mask,u,v,un,vn)
+# host-side smoke test only when the @profile macro is a passthrough; in profile
+# mode the body contains ccalls to wasm-only host imports.
+PROFILE_BUILD || @time model_step(Δx,Δt,Du,Dv,f,k,r,n,mask,u,v,un,vn)
 
 #u_save = copy(u)
 #@show maximum(abs.(u_save - u))
@@ -170,11 +172,11 @@ write("model.o", obj)
 
 # size of the total memory
 mem = 65536*16*2
-run(`clang --target=wasm32 --no-standard-libraries -c -o memset.o ../memset.c`)
+run(`clang --target=wasm64 --no-standard-libraries -c -o memset.o ../memset.c`)
 
 output = PROFILE_BUILD ? "model.profile.wasm" : "model.wasm"
 extra_flags = PROFILE_BUILD ? ["--allow-undefined"] : String[]
-run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all $extra_flags -o $output memset.o model.o`)
+run(`wasm-ld -mwasm64 --initial-memory=$(mem) --no-entry --export-all $extra_flags -o $output memset.o model.o`)
 if PROFILE_BUILD
     write_region_map("model.regions.json")
 end

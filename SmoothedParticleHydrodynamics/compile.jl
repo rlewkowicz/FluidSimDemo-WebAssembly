@@ -5,9 +5,6 @@ using SmoothedParticleHydrodynamics: Particle, W, update!
 using Random
 import Random: rand, AbstractRNG
 
-# assume that we use 32-bit julia
-@assert Int == Int32
-
 # need to inline because of named tuples
 
 
@@ -66,7 +63,7 @@ limits = Tuple(limits)
 length(particles)
 ntime = 0
 
-@time model_step(
+PROFILE_BUILD || @time model_step(
     grav,f,Δx,Δt,ntime,sz[1],sz[2],
     mask,
     particles,
@@ -75,7 +72,7 @@ ntime = 0
     visited,
 )
 
-@time model_step(
+PROFILE_BUILD || @time model_step(
     grav,f,Δx,Δt,ntime,sz[1],sz[2],
     mask,
     particles,
@@ -85,7 +82,7 @@ ntime = 0
 )
 
 ntime = 1
-@time model_step(
+PROFILE_BUILD || @time model_step(
     grav,f,Δx,Δt,ntime,sz[1],sz[2],
     mask,
     particles,
@@ -115,7 +112,7 @@ write("model.o", obj)
 
 # size of the total memory
 mem = 65536*16*2
-run(`clang --target=wasm32 --no-standard-libraries -c -o memset.o ../memset.c`)
+run(`clang --target=wasm64 --no-standard-libraries -c -o memset.o ../memset.c`)
 
 cd(@__DIR__) do
     if !isfile("llvm-project-llvmorg-18.1.4/compiler-rt/lib/builtins/ashlti3.c")
@@ -124,11 +121,12 @@ cd(@__DIR__) do
     end
 end
 
-run(`clang --target=wasm32 --no-standard-libraries -c llvm-project-llvmorg-18.1.4/compiler-rt/lib/builtins/lshrti3.c`)
-run(`clang --target=wasm32 --no-standard-libraries -c llvm-project-llvmorg-18.1.4/compiler-rt/lib/builtins/ashlti3.c`)
+run(`clang --target=wasm64 --no-standard-libraries -c llvm-project-llvmorg-18.1.4/compiler-rt/lib/builtins/lshrti3.c`)
+run(`clang --target=wasm64 --no-standard-libraries -c llvm-project-llvmorg-18.1.4/compiler-rt/lib/builtins/ashlti3.c`)
 output = PROFILE_BUILD ? "model.profile.wasm" : "model.wasm"
-extra_flags = PROFILE_BUILD ? ["--allow-undefined"] : String[]
-run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all $extra_flags -o $output memset.o lshrti3.o ashlti3.o model.o`)
+# --allow-undefined: SpatialHashing emits dead-code references to ijl_box_int64 / ijl_invoke
+# that the JS host stubs as no-ops. They are never called at runtime.
+run(`wasm-ld -mwasm64 --allow-undefined --initial-memory=$(mem) --no-entry --export-all -o $output memset.o lshrti3.o ashlti3.o model.o`)
 if PROFILE_BUILD
     write_region_map("model.regions.json")
 end
