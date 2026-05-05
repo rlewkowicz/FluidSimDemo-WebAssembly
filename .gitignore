@@ -1,0 +1,14 @@
+# Build artifacts
+*.o
+test_add.wasm
+test_matrix.wasm
+test_saxpy.wasm
+test_fluid_sim.wasm
+
+# Profile-build outputs
+*/model.profile.wasm
+*/model.regions.json
+
+# Vendored LLVM source (downloaded on demand by SPH compile.jl)
+SmoothedParticleHydrodynamics/llvm-project-llvmorg-*/
+SmoothedParticleHydrodynamics/llvmorg-*.tar.gz
