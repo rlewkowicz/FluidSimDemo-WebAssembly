@@ -1,11 +1,11 @@
 import { MallocArray, pcolor, quiver, Axis } from "../julia_wasm_utils.js";
+import { loadModel, wrapStep, ProfileHUD } from "../profiling.js";
 
 export async function run(document) {
-    const response = await fetch('model.wasm');
-    const bytes = await response.arrayBuffer();
-    const { instance } = await WebAssembly.instantiate(bytes);
+    const { instance } = await loadModel("./model.wasm");
 
     const { julia_model_step, memory, __heap_base } = instance.exports;
+    const stepFn = wrapStep(julia_model_step, "step");
 
     // base[0] offset of memory, increased by MallocArray
     let base = [__heap_base];
@@ -53,6 +53,7 @@ export async function run(document) {
     ax.mouse_edit_mask(erase_elem,pen_size_elem,mask,sz);
 
     let cb_ax = new Axis(canvas,canvas.width-colorbar_width+10,cb_padding,cb_width,cb_height);
+    const hud = new ProfileHUD(canvas);
 
     function step(timestamp) {
         let Du = parseFloat(document.getElementById("Du").value);
@@ -70,7 +71,7 @@ export async function run(document) {
 
 
             for (let iplot = 0; iplot < nplot; iplot++) {
-                const result = julia_model_step(
+                const result = stepFn(
                     dx,dt,Du,Dv,f,k,r,ntime,mask_p,u_p,v_p,un_p,vn_p);
 
                 ntime += 1;
@@ -84,6 +85,7 @@ export async function run(document) {
             });
 
             ax.colorbar(cb_ax);
+            hud.draw();
         }
         window.requestAnimationFrame(step);
     }

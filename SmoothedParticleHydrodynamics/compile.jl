@@ -25,7 +25,7 @@ function model_step(grav,f,Δx,Δt,ntime,imax,jmax,
     rng = LinearCongruentialGenerators(42)
 
     config,particles,W_spiky,W_rho =
-        SmoothedParticleHydrodynamics.case_dam_break!(
+        @profile :case_setup SmoothedParticleHydrodynamics.case_dam_break!(
             particles,
             init_particles = ntime == 0,
             Δt = Δt,
@@ -35,7 +35,7 @@ function model_step(grav,f,Δx,Δt,ntime,imax,jmax,
 
     sz = (imax,jmax)
     spatial_index = (; table, num_particles, config.h)
-    update!(config,W_spiky,W_rho,particles,spatial_index,visited)
+    @profile :update update!(config,W_spiky,W_rho,particles,spatial_index,visited)
     return 0
     #return SmoothedParticleHydrodynamics.lanczos_gamma(f + 20.0)
 
@@ -126,7 +126,12 @@ end
 
 run(`clang --target=wasm32 --no-standard-libraries -c llvm-project-llvmorg-18.1.4/compiler-rt/lib/builtins/lshrti3.c`)
 run(`clang --target=wasm32 --no-standard-libraries -c llvm-project-llvmorg-18.1.4/compiler-rt/lib/builtins/ashlti3.c`)
-run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all -o model.wasm memset.o lshrti3.o ashlti3.o model.o`)
+output = PROFILE_BUILD ? "model.profile.wasm" : "model.wasm"
+extra_flags = PROFILE_BUILD ? ["--allow-undefined"] : String[]
+run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all $extra_flags -o $output memset.o lshrti3.o ashlti3.o model.o`)
+if PROFILE_BUILD
+    write_region_map("model.regions.json")
+end
 
 
 

@@ -1,11 +1,11 @@
 import { MallocArray, pcolor, quiver, Axis } from "../julia_wasm_utils.js";
+import { loadModel, wrapStep, ProfileHUD } from "../profiling.js";
 
 export async function run(document) {
-    const response = await fetch('model.wasm');
-    const bytes = await response.arrayBuffer();
-    const { instance } = await WebAssembly.instantiate(bytes);
+    const { instance } = await loadModel("./model.wasm");
 
     const { julia_fluid_sim_step, memory, __heap_base } = instance.exports;
+    const stepFn = wrapStep(julia_fluid_sim_step, "step");
 
     // base[0] offset of memory, increased by MallocArray
     let base = [__heap_base];
@@ -71,6 +71,7 @@ export async function run(document) {
     ax.mouse_edit_mask(erase_elem,pen_size_elem,mask,sz);
 
     let cb_ax = new Axis(canvas,canvas.width-colorbar_width+10,cb_padding,cb_width,cb_height);
+    const hud = new ProfileHUD(canvas);
 
     function step(timestamp) {
         let grav = parseFloat(document.getElementById("grav").value);
@@ -84,7 +85,7 @@ export async function run(document) {
 
         if (!isNaN(grav) && !isNaN(f) && !isNaN(hmin) && !isNaN(hmax) && !isNaN(dt) && (hmin < hmax)) {
             //console.log("p ",pressure[140 + sz[0] * 40]);
-            const result = julia_fluid_sim_step(
+            const result = stepFn(
                 grav,bottom_depth,f,beta,dx,dt,ntime,
                 mask_p,fCoriolis_p,h_p,hu_p,hv_p,pressure_p,u_p,v_p,newu_p,newv_p);
             //console.log("beta ",beta,fCoriolis[0]);
@@ -109,6 +110,7 @@ export async function run(document) {
 
             }
             ax.colorbar(cb_ax);
+            hud.draw();
         }
         window.requestAnimationFrame(step);
     }

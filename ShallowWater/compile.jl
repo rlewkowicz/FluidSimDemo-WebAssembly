@@ -36,9 +36,9 @@ function fluid_sim_step(grav,bottom_depth,f₀,β,Δx,Δt,ntime,
     end
 
     @inline sw_boundary_conditions!(config,mask,uv)
-    @inline FluidSimDemo.Physics2D.free_surface!(config,ntime,mask,p,uv)
+    @profile :free_surface (@inline FluidSimDemo.Physics2D.free_surface!(config,ntime,mask,p,uv))
     @inline sw_boundary_conditions!(config,mask,uv)
-    @inline FluidSimDemo.Physics2D.advection!(config,mask,uv,newuv)
+    @profile :advection (@inline FluidSimDemo.Physics2D.advection!(config,mask,uv,newuv))
     @inline sw_boundary_conditions!(config,mask,uv)
     return 0
 end
@@ -73,4 +73,9 @@ mem = 65536*16*2
 # the linker needs memset
 run(`clang --target=wasm32 --no-standard-libraries -c -o memset.o ../memset.c`)
 
-run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all -o model.wasm memset.o model.o`)
+output = PROFILE_BUILD ? "model.profile.wasm" : "model.wasm"
+extra_flags = PROFILE_BUILD ? ["--allow-undefined"] : String[]
+run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all $extra_flags -o $output memset.o model.o`)
+if PROFILE_BUILD
+    write_region_map("model.regions.json")
+end

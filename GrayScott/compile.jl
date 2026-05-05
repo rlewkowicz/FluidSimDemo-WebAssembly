@@ -112,7 +112,7 @@ function model_step(Δx,Δt,Du,Dv,f,k,r,ntime,mask,u,v,un,vn)
     invΔxy = 1 ./ Δxy
     #invΔxy =  Δxy
     config = (; Δxy,invΔxy,Δt,Duv,f,k)
-    @inline GrayScott.step!(config,mask,(u,v),(un,vn))
+    @profile :step (@inline GrayScott.step!(config,mask,(u,v),(un,vn)))
     return 1
 end
 
@@ -172,4 +172,9 @@ write("model.o", obj)
 mem = 65536*16*2
 run(`clang --target=wasm32 --no-standard-libraries -c -o memset.o ../memset.c`)
 
-run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all -o model.wasm memset.o model.o`)
+output = PROFILE_BUILD ? "model.profile.wasm" : "model.wasm"
+extra_flags = PROFILE_BUILD ? ["--allow-undefined"] : String[]
+run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all $extra_flags -o $output memset.o model.o`)
+if PROFILE_BUILD
+    write_region_map("model.regions.json")
+end

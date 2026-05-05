@@ -1,11 +1,11 @@
 import { MallocArray, MallocArray_elsize, pcolor, quiver, Axis, color, colormaps } from "../julia_wasm_utils.js";
+import { loadModel, wrapStep, ProfileHUD } from "../profiling.js";
 
 export async function run(document) {
-    const response = await fetch('model.wasm');
-    const bytes = await response.arrayBuffer();
-    const { instance } = await WebAssembly.instantiate(bytes);
+    const { instance } = await loadModel("./model.wasm");
 
     const { julia_model_step, memory, __heap_base } = instance.exports;
+    const stepFn = wrapStep(julia_model_step, "step");
 
     // base[0] offset of memory, increased by MallocArray
     let base = [__heap_base];
@@ -53,6 +53,7 @@ export async function run(document) {
 
     let ax = new Axis(canvas,0,0,canvas.width-colorbar_width,canvas.height);
     let cb_ax = new Axis(canvas,canvas.width-colorbar_width+10,cb_padding,cb_width,cb_height);
+    const hud = new ProfileHUD(canvas);
 
     let ctx = ax.ctx;
 
@@ -80,10 +81,8 @@ export async function run(document) {
         if (!isNaN(grav) && !isNaN(f) && !isNaN(pmin) && !isNaN(pmax) && !isNaN(dt) && (pmax > pmin)) {
             //console.log("p ",pressure[140 + sz[0] * 40]);
 
-            const start = performance.now();
-
             for (let iplot = 0; iplot < nplot; iplot++) {
-                const result = julia_model_step(
+                const result = stepFn(
                     grav,f,dx,dt,ntime,sz_table[0],sz_table[1],
                     mask_p,particles_p,
                     table_p,
@@ -93,10 +92,6 @@ export async function run(document) {
 
                 ntime += 1;
             }
-
-            const end = performance.now();
-            //console.log(`Execution time: ${end - start} ms. result ${result}`);
-
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.save()
@@ -131,6 +126,7 @@ export async function run(document) {
             ax.clim = [pmin,pmax];
             ax.cmap = cmap;
             ax.colorbar(cb_ax);
+            hud.draw();
 
         }
 

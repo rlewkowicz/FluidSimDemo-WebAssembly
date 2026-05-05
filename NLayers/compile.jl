@@ -14,12 +14,12 @@ function nlayer_init(dx,modeindex,
 
     rng = LinearCongruentialGenerators(42)
     tol = 1e-5
-    @inline nlayer_init!(
+    @profile :init (@inline nlayer_init!(
         dx,modeindex,
         pert_amplitude, pert_width,
         hm,h,u,v,rho,
         eigenvalues,eigenvectors,potential_matrix,tol,work1,work2,
-        rng)
+        rng))
 
 end
 
@@ -69,4 +69,9 @@ mem = 65536*16*2
 
 # the linker needs memset
 run(`clang --target=wasm32 --no-standard-libraries -c -o memset.o ../memset.c`)
-run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all -o model.wasm memset.o nlayer_init.o model.o`)
+output = PROFILE_BUILD ? "model.profile.wasm" : "model.wasm"
+extra_flags = PROFILE_BUILD ? ["--allow-undefined"] : String[]
+run(`wasm-ld --initial-memory=$(mem) --no-entry --export-all $extra_flags -o $output memset.o nlayer_init.o model.o`)
+if PROFILE_BUILD
+    write_region_map("model.regions.json")
+end

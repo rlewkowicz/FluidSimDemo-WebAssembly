@@ -146,6 +146,23 @@ JavaScript typed array there is no additional difficulty concerning row-major or
 The example code [`test_matrix.jl`](test_matrix.jl) sums over all elements of a matrix and in addition it mutates all elements by adding 1. Running the JavaScript code [`test_matrix_node.js`](test_matrix_node.js) gives the expected output. As in Julia, scalar parameters (32/64-bit integer, floats) are passed by value while arrays are passed by reference and can thus changes are visible
 by the caller.
 
+## Profiling build
+
+Each simulation can be compiled in two modes:
+
+* **Release** (default): unchanged from the original build. The `compile.jl` scripts produce `model.wasm` exactly as before, with no profiling instrumentation in the generated WASM.
+* **Profile**: produces a separate artifact `model.profile.wasm` (plus a `model.regions.json` mapping region ids to names) that adds host-imported `js_perf_now` / `js_profile_record` ccalls inside the kernels wrapped with `@profile`.
+
+To produce a profile binary, set the `FLUIDSIM_PROFILE` environment variable when running `compile.jl`:
+
+```bash
+FLUIDSIM_PROFILE=1 julia GrayScott/compile.jl
+```
+
+This emits `GrayScott/model.profile.wasm` next to `GrayScott/model.wasm` and leaves the release artifact untouched. To select the profile build at runtime, append `?profile=1` to the page URL — for example `GrayScott/index.html?profile=1`. The page then loads the profile binary, supplies the host imports, and renders a small HUD overlay showing average and p95 step time, FPS, and the top regions by mean time. A regions summary is also logged to the console every 120 frames, and rolling stats are exposed at `window.__fluidsim_profile`. Without `?profile=1`, the page loads `model.wasm` and behaves identically to before.
+
+The `@profile :name expr` macro lives in [`wasm_target.jl`](wasm_target.jl). In release mode it expands to `expr` (no instrumentation reaches the WASM binary); in profile mode it wraps `expr` with timing calls and records the elapsed milliseconds against the named region. Region names declared with `@profile` across all `build_obj` calls in a `compile.jl` are written to `model.regions.json` for the JS side to read.
+
 ## Fluid simulation
 
 ### 2D Navier-Stokes equations (with rigid-lid)

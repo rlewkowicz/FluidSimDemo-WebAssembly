@@ -1,4 +1,5 @@
 import { MallocArray, pcolor, quiver, colormaps, color, Axis } from "../julia_wasm_utils.js";
+import { loadModel, wrapStep, ProfileHUD } from "../profiling.js";
 
 
 
@@ -12,11 +13,11 @@ let restart = true;
 
 export async function run(document) {
 
-    const response = await fetch('model.wasm');
-    const bytes = await response.arrayBuffer();
-    const { instance } = await WebAssembly.instantiate(bytes,{});
+    const { instance } = await loadModel("./model.wasm");
 
     const { julia_nlayer_step, julia_nlayer_init, memory, __heap_base } = instance.exports;
+    const stepFn = wrapStep(julia_nlayer_step, "step");
+    const initFn = wrapStep(julia_nlayer_init, "init");
 
     // base[0] offset of memory, increased by MallocArray
     let base = [__heap_base];
@@ -133,6 +134,7 @@ export async function run(document) {
     ax.ylim = [0,canvas_height_m];
 
     let cb_ax = new Axis(canvas,canvas.width-colorbar_width+10,cb_padding,cb_width,cb_height);
+    const hud = new ProfileHUD(canvas);
 
     let ctx = ax.ctx;
 
@@ -161,7 +163,7 @@ export async function run(document) {
             //let modeindex = 3;
 
             if (ntime == 0 || restart) {
-                julia_nlayer_init(
+                initFn(
                     dx,modeindex,
                     pert_amplitude, pert_width,
                     rho_p,hm_p,h_p,u_p,v_p,
@@ -182,17 +184,13 @@ export async function run(document) {
                 restart = false;
             }
 
-            let startTime =  performance.now();
             for (let iplot = 0; iplot < nplot; iplot++) {
-                const result = julia_nlayer_step(
+                const result = stepFn(
                     ntime,dx,dt,grav,f,
                     rho_p,P_p,h_p,hm_p,hu_p,u_p,v_p,z_p,bottom_p
                 );
                 ntime += 1;
             }
-            let endTime = performance.now()
-            //console.log("time delta", endTime - startTime);
-
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.save()
@@ -232,6 +230,7 @@ export async function run(document) {
             ax.clim = [hmin,hmax];
             ax.cmap = cmap;
             ax.colorbar(cb_ax);
+            hud.draw();
 
             //console.log("z ",h[0]);
         }

@@ -8,6 +8,53 @@ using StaticTools
 # Compiler Target
 #####
 
+const PROFILE_BUILD = haskey(ENV, "FLUIDSIM_PROFILE")
+
+if PROFILE_BUILD
+    const REGION_NAMES = Symbol[]
+
+    function register_region!(name::Symbol)
+        for (i, n) in pairs(REGION_NAMES)
+            n === name && return Int32(i - 1)
+        end
+        push!(REGION_NAMES, name)
+        return Int32(length(REGION_NAMES) - 1)
+    end
+
+    @inline host_now() =
+        ccall("extern js_perf_now", llvmcall, Float64, ())
+    @inline host_record(id::Int32, ms::Float64) =
+        ccall("extern js_profile_record", llvmcall, Cvoid, (Int32, Float64), id, ms)
+
+    macro profile(name, expr)
+        sym = name isa QuoteNode ? name.value :
+              name isa Symbol    ? name        :
+              error("@profile expects a Symbol as first argument, got $(typeof(name))")
+        id = register_region!(sym)
+        quote
+            local _t0 = host_now()
+            local _v = $(esc(expr))
+            host_record($id, host_now() - _t0)
+            _v
+        end
+    end
+
+    function write_region_map(path::AbstractString)
+        open(path, "w") do io
+            print(io, "{\"regions\":[")
+            for (i, name) in pairs(REGION_NAMES)
+                i > 1 && print(io, ",")
+                print(io, "\"", name, "\"")
+            end
+            print(io, "]}")
+        end
+    end
+else
+    macro profile(_name, expr)
+        esc(expr)
+    end
+end
+
 struct WASMTarget <: GPUCompiler.AbstractCompilerTarget end
 
 GPUCompiler.llvm_triple(::WASMTarget) = "wasm32-unknown-wasi"
